@@ -129,7 +129,7 @@ justification_parts.append("")
 justification_parts.append("ЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ")
 for i, (_, analog) in enumerate(analogs.iterrows(), 1):
     justification_parts.append(
-        f"Аналог {i}: {analog.get('name', '')[:50]} | "
+        f"Аналог {i}: {str(analog.get('name', ''))[:50]} | "
         f"Площадь: {analog['area']:.0f} м² | "
         f"Цена: {analog['price_per_sqm']:.0f} руб/м² | "
         f"Корректировка: {corrections[i-1]:.3f}"
