@@ -3,6 +3,13 @@ from catboost import CatBoostRegressor
 from sklearn.neighbors import NearestNeighbors
 import pickle
 
+def is_empty(val):
+    """Проверяет, является ли значение пустым"""
+    if pd.isna(val):
+        return True
+    s = str(val).strip().lower()
+    return s in ['', 'nan', 'none', 'null', '-', 'нет']
+
 df = pd.read_excel("deals.xlsx")
 
 df = df.rename(columns={
@@ -22,6 +29,9 @@ df = df[df['deal_type'] == 'Купля-продажа'].copy()
 df = df[df['price_per_sqm'] > 100].copy()
 df = df[df['area'] > 10].copy()
 df['build_year'] = df['build_year'].fillna(2015)
+
+# Только с заполненным permitted_use
+df = df[~df['permitted_use'].apply(is_empty)].copy()
 
 type_map = {'Земельный участок': 1, 'Здание': 2, 'Помещение': 3, 'Сооружение': 4}
 df['object_type_code'] = df['object_type'].map(type_map).fillna(0)
