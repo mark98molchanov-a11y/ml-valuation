@@ -9,6 +9,10 @@ on:
         description: 'Год постройки'
         required: false
         default: '2015'
+      object_type:
+        description: 'Тип объекта'
+        required: false
+        default: 'Помещение'
 
 jobs:
   predict:
@@ -22,12 +26,11 @@ jobs:
           python-version: '3.11'
       
       - name: Install dependencies
-        run: pip install pandas catboost openpyxl
+        run: pip install pandas catboost scikit-learn openpyxl
       
       - name: Train model
         run: python train_model.py
       
       - name: Predict price
         run: |
-          result=$(python predict.py ${{ inputs.area }} ${{ inputs.build_year }})
-          echo $result
+          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}'
