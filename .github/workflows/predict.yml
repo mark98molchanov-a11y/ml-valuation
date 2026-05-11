@@ -1,0 +1,33 @@
+name: ML Price Prediction
+on:
+  workflow_dispatch:
+    inputs:
+      area:
+        description: 'Площадь (м²)'
+        required: true
+      build_year:
+        description: 'Год постройки'
+        required: false
+        default: '2015'
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install pandas catboost openpyxl
+      
+      - name: Train model
+        run: python train_model.py
+      
+      - name: Predict price
+        run: |
+          result=$(python predict.py ${{ inputs.area }} ${{ inputs.build_year }})
+          echo $result
