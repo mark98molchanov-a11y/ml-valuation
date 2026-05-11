@@ -1,4 +1,0 @@
-pandas
-catboost
-scikit-learn
-openpyxl
