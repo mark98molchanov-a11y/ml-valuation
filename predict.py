@@ -60,28 +60,49 @@ if address:
 price_sqm = model.predict([[area, build_year, type_code]])[0]
 price_total = price_sqm * area
 
-# Подбор аналогов
+# ============================================================
+# Подбор аналогов (приоритет: только с заполненным permitted_use)
+# ============================================================
+
+# База: тот же тип + похожая площадь
 similar = df[df['object_type_code'] == type_code].copy()
 similar = similar[similar['area'].between(area * 0.3, area * 3.0)]
 
+# Сначала пробуем только с заполненным permitted_use
+similar_filled = similar[~similar['permitted_use'].apply(is_empty)].copy()
+
+if len(similar_filled) >= 5:
+    similar = similar_filled
+elif len(similar_filled) >= 3:
+    # Мало заполненных — добавляем остальные
+    similar_empty = similar[similar['permitted_use'].apply(is_empty)].copy()
+    similar = pd.concat([similar_filled, similar_empty])
+else:
+    # Заполненных почти нет — используем все
+    pass
+
 # Город
-if city:
+if city and len(similar) >= 5:
     city_filtered = similar[similar['address'].str.contains(city, na=False)]
     if len(city_filtered) >= 3:
         similar = city_filtered
 
-# Вид разрешенного использования (только заполненные)
-if permitted_use:
-    similar = similar[~similar['permitted_use'].apply(is_empty)].copy()
-    if len(similar) >= 3:
-        use_filtered = similar[similar['permitted_use'].str.contains(permitted_use[:20], na=False)]
-        if len(use_filtered) >= 3:
-            similar = use_filtered
+# Вид разрешенного использования
+if permitted_use and len(similar) >= 5:
+    use_filtered = similar[similar['permitted_use'].notna() & similar['permitted_use'].str.contains(permitted_use[:20], na=False)]
+    if len(use_filtered) >= 3:
+        similar = use_filtered
 
+# Если после всех фильтров пусто — расширяем
 if len(similar) < 5:
     similar = df[df['object_type_code'] == type_code].copy()
+    similar = similar[similar['area'].between(area * 0.1, area * 5.0)]
 
-nn = NearestNeighbors(n_neighbors=min(5, len(similar)))
+if len(similar) < 3:
+    similar = df.copy()
+
+n_neighbors = min(5, len(similar))
+nn = NearestNeighbors(n_neighbors=n_neighbors)
 nn.fit(similar[['area', 'build_year', 'object_type_code']].fillna(0).values)
 distances, indices = nn.kneighbors([[area, build_year, type_code]])
 analogs = similar.iloc[indices[0]]
