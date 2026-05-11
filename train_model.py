@@ -16,7 +16,7 @@ df = df.rename(columns={
     'Vid_sdelki': 'deal_type',
     'Naimenovanie': 'name',
     'Vid_obyekta_nedvizhimosti': 'object_type',
-    'Naznachenie': 'purpose'
+    'Vid_razreshennogo_ispolzovaniya': 'usage'
 })
 
 # Фильтруем
@@ -25,29 +25,33 @@ df = df[df['price_per_sqm'] > 100].copy()
 df = df[df['area'] > 10].copy()
 df['build_year'] = df['build_year'].fillna(2015)
 
-# Кодируем тип объекта в числа
-type_map = {
-    'Земельный участок': 1,
-    'Здание': 2,
-    'Помещение': 3,
-    'Сооружение': 4
-}
+# Кодируем тип объекта
+type_map = {'Земельный участок': 1, 'Здание': 2, 'Помещение': 3, 'Сооружение': 4}
 df['object_type_code'] = df['object_type'].map(type_map).fillna(0)
 
 print(f"После фильтрации: {len(df)} сделок")
 
-# Обучаем ML-модель (цена за м²)
+# ============================================================
+# Обучаем ML-модель
+# ============================================================
 X = df[['area', 'build_year', 'object_type_code']].fillna(0)
 y = df['price_per_sqm']
 
 model = CatBoostRegressor(iterations=500, learning_rate=0.1, depth=6, verbose=0)
 model.fit(X, y)
 
-# Сохраняем модель
+# Сохраняем модель и данные
 with open("model.pkl", "wb") as f:
     pickle.dump(model, f)
 
-# Сохраняем данные для поиска аналогов
 df.to_csv("deals_clean.csv", index=False)
 
-print("✅ Модель обучена, данные сохранены!")
+# Выводим статистику модели
+importance = model.get_feature_importance()
+print("\n📊 Важность признаков:")
+for name, imp in zip(['area', 'build_year', 'object_type_code'], importance):
+    print(f"  {name}: {imp:.2%}")
+
+print(f"\n✅ Модель обучена на {len(df)} сделках")
+print(f"📊 Средняя цена за м²: {df['price_per_sqm'].mean():.0f} руб.")
+print(f"📊 Медианная цена за м²: {df['price_per_sqm'].median():.0f} руб.")
