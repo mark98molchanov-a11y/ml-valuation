@@ -33,35 +33,11 @@ jobs:
         with:
           python-version: '3.11'
       
-      # Кеш для pip-зависимостей
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-      
-      # Кеш для модели (model.pkl)
-      - name: Cache model
-        uses: actions/cache@v4
-        with:
-          path: |
-            model.pkl
-            deals_clean.csv
-          key: model-${{ hashFiles('deals.xlsx', 'train_model.py') }}
-      
       - name: Install dependencies
         run: pip install pandas catboost scikit-learn openpyxl
       
-      - name: Train model (skip if cached)
-        run: |
-          if [ ! -f model.pkl ]; then
-            echo "Модель не найдена, обучаем..."
-            python train_model.py
-          else
-            echo "✅ Используем кешированную модель"
-          fi
+      - name: Train model
+        run: python train_model.py
       
       - name: Predict price
         run: |
