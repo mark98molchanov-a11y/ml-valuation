@@ -13,8 +13,8 @@ on:
         description: 'Тип объекта'
         required: false
         default: 'Помещение'
-      usage:
-        description: 'Вид использования'
+      permitted_use:
+        description: 'Вид разрешенного использования'
         required: false
         default: ''
       address:
@@ -41,4 +41,4 @@ jobs:
         run: python train_model.py
       - name: Predict price
         run: |
-          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}' '${{ inputs.usage }}' '${{ inputs.address }}' '${{ inputs.kadastr }}'
+          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}' '${{ inputs.permitted_use }}' '${{ inputs.address }}' '${{ inputs.kadastr }}'
