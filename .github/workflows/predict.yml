@@ -13,6 +13,14 @@ on:
         description: 'Тип объекта'
         required: false
         default: 'Помещение'
+      usage:
+        description: 'Вид использования'
+        required: false
+        default: ''
+      address:
+        description: 'Адрес'
+        required: false
+        default: ''
 
 jobs:
   predict:
@@ -33,4 +41,4 @@ jobs:
       
       - name: Predict price
         run: |
-          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}'
+          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}' '${{ inputs.usage }}' '${{ inputs.address }}'
