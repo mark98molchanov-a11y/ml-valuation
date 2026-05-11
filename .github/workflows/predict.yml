@@ -21,24 +21,24 @@ on:
         description: 'Адрес'
         required: false
         default: ''
+      kadastr:
+        description: 'Кадастровый номер'
+        required: false
+        default: ''
 
 jobs:
   predict:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
       - name: Install dependencies
         run: pip install pandas catboost scikit-learn openpyxl
-      
       - name: Train model
         run: python train_model.py
-      
       - name: Predict price
         run: |
-          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}' '${{ inputs.usage }}' '${{ inputs.address }}'
+          python predict.py ${{ inputs.area }} ${{ inputs.build_year }} '${{ inputs.object_type }}' '${{ inputs.usage }}' '${{ inputs.address }}' '${{ inputs.kadastr }}'
