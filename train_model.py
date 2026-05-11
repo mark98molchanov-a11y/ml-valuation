@@ -14,8 +14,8 @@ df = df.rename(columns={
     'Vid_sdelki': 'deal_type',
     'Naimenovanie': 'name',
     'Vid_obyekta_nedvizhimosti': 'object_type',
-    'Vid_razreshennogo_ispolzovaniya': 'usage',
-    'Obyekty_t__nedvizhimosti': 'kadastr'  # ← Кадастровый номер!
+    'Vid_razreshennogo_ispolzovaniya': 'permitted_use',
+    'Obyekty_t__nedvizhimosti': 'kadastr'
 })
 
 df = df[df['deal_type'] == 'Купля-продажа'].copy()
