@@ -9,6 +9,7 @@ df = pd.read_excel("deals.xlsx")
 # Переименовываем колонки
 df = df.rename(columns={
     'cen_za_kv_m': 'price_per_sqm',
+    'Obyekty_t__nedvizhimosti': 'kadastr',
     'cena_zdelki': 'price_total',
     'Znachenie_osnovnoy_characteristici': 'area',
     'God_postroyki': 'build_year',
