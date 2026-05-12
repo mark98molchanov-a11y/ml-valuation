@@ -16,8 +16,18 @@ def clean_val(val, max_len=80):
         return ''
     return str(val).strip()[:max_len]
 
-with open("model.pkl", "rb") as f:
-    model = pickle.load(f)
+# Загружаем модели
+try:
+    with open("model_buildings.pkl", "rb") as f:
+        model_buildings = pickle.load(f)
+except:
+    model_buildings = None
+
+try:
+    with open("model_land.pkl", "rb") as f:
+        model_land = pickle.load(f)
+except:
+    model_land = None
 
 df = pd.read_csv("deals_clean.csv")
 
@@ -31,8 +41,9 @@ kadastr = sys.argv[6] if len(sys.argv) > 6 else ''
 
 type_map = {'Земельный участок': 1, 'Здание': 2, 'Помещение': 3, 'Сооружение': 4}
 type_code = type_map.get(object_type, 0)
+is_land = (type_code == 1)
 
-# Автоматическое определение города
+# Город
 city = ''
 if address:
     all_cities = set()
@@ -56,30 +67,39 @@ if address:
                 city = c
                 break
 
-# ML-прогноз
-price_sqm = model.predict([[area, build_year, type_code]])[0]
+# ============================================================
+# ML-прогноз (разные модели для разных типов)
+# ============================================================
+if is_land and model_land:
+    use_code = pd.factorize(df['permitted_use'])[0][df['permitted_use'] == permitted_use]
+    use_code = use_code[0] if len(use_code) > 0 else 0
+    price_sqm = model_land.predict([[area, build_year, use_code]])[0]
+elif not is_land and model_buildings:
+    wall_code = 0  # По умолчанию
+    price_sqm = model_buildings.predict([[area, build_year, type_code, wall_code]])[0]
+else:
+    price_sqm = df['price_per_sqm'].median()
+
 price_total = price_sqm * area
 
 # ============================================================
-# Подбор аналогов (приоритет: только с заполненным permitted_use)
+# Подбор аналогов
 # ============================================================
-
-# База: тот же тип + похожая площадь
 similar = df[df['object_type_code'] == type_code].copy()
 similar = similar[similar['area'].between(area * 0.3, area * 3.0)]
 
-# Сначала пробуем только с заполненным permitted_use
-similar_filled = similar[~similar['permitted_use'].apply(is_empty)].copy()
+# Для земли — фильтр по permitted_use
+if is_land and permitted_use:
+    similar = similar[~similar['permitted_use'].apply(is_empty)].copy()
+    use_filtered = similar[similar['permitted_use'].str.contains(permitted_use[:20], na=False)]
+    if len(use_filtered) >= 3:
+        similar = use_filtered
 
-if len(similar_filled) >= 5:
-    similar = similar_filled
-elif len(similar_filled) >= 3:
-    # Мало заполненных — добавляем остальные
-    similar_empty = similar[similar['permitted_use'].apply(is_empty)].copy()
-    similar = pd.concat([similar_filled, similar_empty])
-else:
-    # Заполненных почти нет — используем все
-    pass
+# Для зданий — фильтр по name
+if not is_land:
+    similar_filled = similar[~similar['permitted_use'].apply(is_empty)].copy()
+    if len(similar_filled) >= 3:
+        similar = similar_filled
 
 # Город
 if city and len(similar) >= 5:
@@ -87,24 +107,21 @@ if city and len(similar) >= 5:
     if len(city_filtered) >= 3:
         similar = city_filtered
 
-# Вид разрешенного использования
-if permitted_use and len(similar) >= 5:
-    use_filtered = similar[similar['permitted_use'].notna() & similar['permitted_use'].str.contains(permitted_use[:20], na=False)]
-    if len(use_filtered) >= 3:
-        similar = use_filtered
-
-# Если после всех фильтров пусто — расширяем
+# Расширяем если пусто
 if len(similar) < 5:
     similar = df[df['object_type_code'] == type_code].copy()
-    similar = similar[similar['area'].between(area * 0.1, area * 5.0)]
-
 if len(similar) < 3:
     similar = df.copy()
 
 n_neighbors = min(5, len(similar))
 nn = NearestNeighbors(n_neighbors=n_neighbors)
-nn.fit(similar[['area', 'build_year', 'object_type_code']].fillna(0).values)
-distances, indices = nn.kneighbors([[area, build_year, type_code]])
+
+if is_land:
+    nn.fit(similar[['area', 'build_year']].fillna(0).values)
+else:
+    nn.fit(similar[['area', 'build_year', 'object_type_code']].fillna(0).values)
+
+distances, indices = nn.kneighbors([[area, build_year] + ([type_code] if not is_land else [])])
 analogs = similar.iloc[indices[0]]
 
 # Корректировки
@@ -120,9 +137,6 @@ for _, analog in analogs.iterrows():
         corr *= 1 + (year_diff * 0.005)
     if city and city not in str(analog.get('address', '')):
         corr *= 0.90
-    analog_use = str(analog.get('permitted_use', '')).lower()
-    if permitted_use and permitted_use[:10].lower() not in analog_use:
-        corr *= 0.95
     corrections.append(round(corr, 3))
 
 # Средневзвешенная
