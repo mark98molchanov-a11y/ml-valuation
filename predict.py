@@ -38,10 +38,15 @@ object_type = sys.argv[3] if len(sys.argv) > 3 else 'Помещение'
 permitted_use = sys.argv[4] if len(sys.argv) > 4 else ''
 address = sys.argv[5] if len(sys.argv) > 5 else ''
 kadastr = sys.argv[6] if len(sys.argv) > 6 else ''
+wall_material = sys.argv[7] if len(sys.argv) > 7 else ''
+object_name = sys.argv[8] if len(sys.argv) > 8 else ''
 
 type_map = {'Земельный участок': 1, 'Здание': 2, 'Помещение': 3, 'Сооружение': 4}
 type_code = type_map.get(object_type, 0)
 is_land = (type_code == 1)
+
+material_map = {'Кирпич': 1, 'Панель': 2, 'Монолит': 3, 'Дерево': 4, 'Блок': 5}
+wall_code = material_map.get(wall_material, 0)
 
 # Город
 city = ''
@@ -68,14 +73,13 @@ if address:
                 break
 
 # ============================================================
-# ML-прогноз (разные модели для разных типов)
+# ML-прогноз
 # ============================================================
 if is_land and model_land:
     use_code = pd.factorize(df['permitted_use'])[0][df['permitted_use'] == permitted_use]
     use_code = use_code[0] if len(use_code) > 0 else 0
     price_sqm = model_land.predict([[area, build_year, use_code]])[0]
 elif not is_land and model_buildings:
-    wall_code = 0  # По умолчанию
     price_sqm = model_buildings.predict([[area, build_year, type_code, wall_code]])[0]
 else:
     price_sqm = df['price_per_sqm'].median()
@@ -88,18 +92,24 @@ price_total = price_sqm * area
 similar = df[df['object_type_code'] == type_code].copy()
 similar = similar[similar['area'].between(area * 0.3, area * 3.0)]
 
-# Для земли — фильтр по permitted_use
+# Для земли — фильтр по permitted_use (ВРИ)
 if is_land and permitted_use:
     similar = similar[~similar['permitted_use'].apply(is_empty)].copy()
     use_filtered = similar[similar['permitted_use'].str.contains(permitted_use[:20], na=False)]
     if len(use_filtered) >= 3:
         similar = use_filtered
 
-# Для зданий — фильтр по name
+# Для зданий/помещений — фильтр по наименованию и материалу стен
 if not is_land:
-    similar_filled = similar[~similar['permitted_use'].apply(is_empty)].copy()
-    if len(similar_filled) >= 3:
-        similar = similar_filled
+    if object_name:
+        name_filtered = similar[similar['name'].astype(str).str.contains(object_name[:20], na=False)]
+        if len(name_filtered) >= 3:
+            similar = name_filtered
+    
+    if wall_material:
+        material_filtered = similar[similar['wall_material'].astype(str).str.contains(wall_material, na=False)]
+        if len(material_filtered) >= 3:
+            similar = material_filtered
 
 # Город
 if city and len(similar) >= 5:
@@ -154,15 +164,28 @@ avg_analog = analogs['price_per_sqm'].mean()
 diff_pct = (price_sqm - avg_analog) / avg_analog * 100
 
 justification = f"""ОЦЕНКА ОБЪЕКТА{' с КН ' + kadastr if kadastr else ''}:
-Тип: {object_type} | Площадь: {area:.0f} м² | Год: {build_year} | Город: {city if city else 'не определён'}
-Вид разрешенного использования: {permitted_use if permitted_use else 'не указан'}
+Тип: {object_type} | Площадь: {area:.0f} м² | Год: {build_year} | Город: {city if city else 'не определён'}"""
+
+if is_land and permitted_use:
+    justification += f"\nВРИ: {permitted_use}"
+if not is_land:
+    if object_name:
+        justification += f"\nНаименование: {object_name}"
+    if wall_material:
+        justification += f"\nМатериал стен: {wall_material}"
+
+justification += f"""
 
 ЭТАП 1: ПРЕДВАРИТЕЛЬНЫЙ ОТБОР
 Из базы {len(df)} сделок отобраны по критериям: тип={object_type}, площадь={area*0.3:.0f}-{area*3.0:.0f} м²"""
 if city:
     justification += f", город={city}"
-if permitted_use:
-    justification += f", вид использования={permitted_use}"
+if is_land and permitted_use:
+    justification += f", ВРИ={permitted_use}"
+if not is_land and object_name:
+    justification += f", наименование={object_name}"
+if not is_land and wall_material:
+    justification += f", материал={wall_material}"
 justification += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ\n"
 
 for i, (_, a) in enumerate(analogs.iterrows(), 1):
@@ -186,6 +209,8 @@ result = {
         "build_year": build_year,
         "object_type": object_type,
         "permitted_use": clean_val(permitted_use, 50),
+        "name": clean_val(object_name, 80),
+        "wall_material": clean_val(wall_material, 30),
         "city": clean_val(city, 30),
         "address": clean_val(address, 120)
     },
@@ -214,6 +239,7 @@ for i, (_, a) in enumerate(analogs.iterrows()):
         "build_year": int(a.get('build_year', 0)) if not pd.isna(a.get('build_year')) else 0,
         "object_type": clean_val(a.get('object_type', ''), 30),
         "permitted_use": clean_val(a.get('permitted_use', ''), 50),
+        "wall_material": clean_val(a.get('wall_material', ''), 30),
         "address": clean_val(a.get('address', ''), 120),
         "correction": corrections[i],
         "similarity": round(100 - distances[0][i] * 15, 1)
