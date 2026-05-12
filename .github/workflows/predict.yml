@@ -26,11 +26,11 @@ on:
         required: false
         default: ''
       name:
-        description: 'Наименование — для зданий (достаточно 1-2 слов)'
+        description: 'Наименование — для зданий'
         required: false
         default: ''
       address:
-        description: 'Адрес (город или улица)'
+        description: 'Адрес (город)'
         required: false
         default: ''
       kadastr:
