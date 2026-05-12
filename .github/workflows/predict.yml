@@ -18,11 +18,11 @@ on:
           - Помещение
           - Сооружение
       permitted_use:
-        description: 'ВРИ — для ЗУ (достаточно ключевого слова)'
+        description: 'ВРИ — для ЗУ'
         required: false
         default: ''
       wall_material:
-        description: 'Материал стен — для зданий (достаточно ключевого слова)'
+        description: 'Материал стен — для зданий, помещений, сооружений'
         required: false
         default: ''
       name:
