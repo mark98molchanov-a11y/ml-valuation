@@ -21,7 +21,7 @@ df = df.rename(columns={
     'Vid_obyekta_nedvizhimosti': 'object_type',
     'Vid_razreshennogo_ispolzovaniya': 'permitted_use',
     'Obyekty_t__nedvizhimosti': 'kadastr',
-    'Material_sten': 'wall_material'  # ← добавили
+    'Material_sten': 'wall_material'
 })
 
 df = df[df['deal_type'] == 'Купля-продажа'].copy()
@@ -29,19 +29,13 @@ df = df[df['price_per_sqm'] > 100].copy()
 df = df[df['area'] > 10].copy()
 df['build_year'] = df['build_year'].fillna(2015)
 
-# Кодируем тип объекта
 type_map = {'Земельный участок': 1, 'Здание': 2, 'Помещение': 3, 'Сооружение': 4}
 df['object_type_code'] = df['object_type'].map(type_map).fillna(0)
 
-# Кодируем материал стен
 material_map = {'Кирпич': 1, 'Панель': 2, 'Монолит': 3, 'Дерево': 4, 'Блок': 5}
 df['wall_material_code'] = df['wall_material'].map(material_map).fillna(0)
 
-# ============================================================
-# Разделяем на две группы для обучения
-# ============================================================
-
-# Группа 1: Здания + Помещения + Сооружения (учитываем name + wall_material)
+# Группа 1: Здания + Помещения + Сооружения
 buildings = df[df['object_type_code'].isin([2, 3, 4])].copy()
 if len(buildings) > 10:
     X_buildings = buildings[['area', 'build_year', 'object_type_code', 'wall_material_code']].fillna(0)
@@ -53,12 +47,11 @@ if len(buildings) > 10:
         pickle.dump(model_buildings, f)
     print(f"✅ Модель для зданий/помещений обучена на {len(buildings)} объектах")
 
-# Группа 2: Земельные участки (учитываем permitted_use)
+# Группа 2: Земельные участки
 land = df[df['object_type_code'] == 1].copy()
 land = land[~land['permitted_use'].apply(is_empty)].copy()
 
 if len(land) > 10:
-    # Кодируем permitted_use в числа
     land['use_code'] = pd.factorize(land['permitted_use'])[0]
     
     X_land = land[['area', 'build_year', 'use_code']].fillna(0)
@@ -70,6 +63,5 @@ if len(land) > 10:
         pickle.dump(model_land, f)
     print(f"✅ Модель для земельных участков обучена на {len(land)} объектах")
 
-# Сохраняем данные
 df.to_csv("deals_clean.csv", index=False)
 print("✅ Данные сохранены!")
