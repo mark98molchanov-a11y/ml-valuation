@@ -87,27 +87,56 @@ else:
 price_total = price_sqm * area
 
 # ============================================================
-# Подбор аналогов
+# Подбор аналогов с автопоиском
 # ============================================================
 similar = df[df['object_type_code'] == type_code].copy()
 similar = similar[similar['area'].between(area * 0.3, area * 3.0)]
 
-# Для земли — фильтр по permitted_use (ВРИ)
+# Для земли — автопоиск похожего ВРИ
 if is_land and permitted_use:
     similar = similar[~similar['permitted_use'].apply(is_empty)].copy()
-    use_filtered = similar[similar['permitted_use'].str.contains(permitted_use[:20], na=False)]
+    
+    keywords = permitted_use.lower().split()
+    use_filtered = similar[similar['permitted_use'].str.lower().apply(
+        lambda x: any(kw in x for kw in keywords) if pd.notna(x) else False
+    )]
+    
     if len(use_filtered) >= 3:
         similar = use_filtered
+    else:
+        first_word = keywords[0] if keywords else ''
+        use_filtered = similar[similar['permitted_use'].str.lower().str.contains(first_word, na=False)]
+        if len(use_filtered) >= 3:
+            similar = use_filtered
 
-# Для зданий/помещений — фильтр по наименованию и материалу стен
+# Для зданий/помещений — автопоиск по наименованию и материалу
 if not is_land:
     if object_name:
-        name_filtered = similar[similar['name'].astype(str).str.contains(object_name[:20], na=False)]
+        keywords = object_name.lower().split()
+        
+        def name_similar(name_val):
+            if pd.isna(name_val):
+                return False
+            name_lower = str(name_val).lower()
+            matches = sum(1 for kw in keywords if kw in name_lower)
+            return matches >= min(2, len(keywords))
+        
+        name_filtered = similar[similar['name'].apply(name_similar)]
+        
         if len(name_filtered) >= 3:
             similar = name_filtered
+        else:
+            first_word = keywords[0] if keywords else ''
+            name_filtered = similar[similar['name'].astype(str).str.lower().str.contains(first_word, na=False)]
+            if len(name_filtered) >= 3:
+                similar = name_filtered
     
     if wall_material:
-        material_filtered = similar[similar['wall_material'].astype(str).str.contains(wall_material, na=False)]
+        material_keywords = wall_material.lower().split()
+        material_filtered = similar[similar['wall_material'].astype(str).str.lower().apply(
+            lambda x: any(kw in x for kw in material_keywords) if pd.notna(x) else False
+        )]
+        
         if len(material_filtered) >= 3:
             similar = material_filtered
 
@@ -181,17 +210,24 @@ justification += f"""
 if city:
     justification += f", город={city}"
 if is_land and permitted_use:
-    justification += f", ВРИ={permitted_use}"
+    justification += f", ВРИ похожие на «{permitted_use}»"
 if not is_land and object_name:
-    justification += f", наименование={object_name}"
+    justification += f", наименование похожее на «{object_name}»"
 if not is_land and wall_material:
-    justification += f", материал={wall_material}"
+    justification += f", материал «{wall_material}»"
 justification += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ\n"
 
 for i, (_, a) in enumerate(analogs.iterrows(), 1):
     kad = clean_val(a.get('kadastr', ''), 20)
     name = clean_val(a.get('name', ''), 50)
-    justification += f"Аналог {i}: {name} | КН: {kad} | Площадь: {int(a['area'])} м² | Цена: {int(a['price_per_sqm'])} руб/м² | Корр: {corrections[i-1]:.3f}\n"
+    mat = clean_val(a.get('wall_material', ''), 15)
+    use = clean_val(a.get('permitted_use', ''), 30)
+    justification += f"Аналог {i}: {name} | КН: {kad} | Площадь: {int(a['area'])} м² | Цена: {int(a['price_per_sqm'])} руб/м²"
+    if mat:
+        justification += f" | Материал: {mat}"
+    if use:
+        justification += f" | ВРИ: {use}"
+    justification += f" | Корр: {corrections[i-1]:.3f}\n"
 
 justification += f"""
 ЭТАП 3: РАСЧЁТ
