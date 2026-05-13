@@ -79,7 +79,6 @@ search_level = "вся база"
 if is_land and permitted_use:
     similar = similar[~similar['permitted_use'].apply(is_empty)].copy()
     kw = permitted_use.lower().split()
-    
     exact = similar[similar['permitted_use'].apply(lambda x: all(k in str(x).lower() for k in kw) if pd.notna(x) else False)]
     if len(exact) >= 3:
         similar = exact; search_level = "точное совпадение ВРИ"
@@ -92,7 +91,6 @@ if is_land and permitted_use:
 if not is_land:
     if object_name:
         kw = object_name.lower().split()
-        
         exact = similar[similar['name'].apply(lambda x: all(k in str(x).lower() for k in kw) if pd.notna(x) else False)]
         if len(exact) >= 3:
             similar = exact; search_level = "точное совпадение наименования"
@@ -120,34 +118,48 @@ if len(similar) < 5: similar = df[df['object_type_code'] == type_code].copy()
 if len(similar) < 3: similar = df.copy()
 
 # ============================================================
-# Поиск 5 ближайших
+# Поиск 5 ближайших — РАВНОЗНАЧНЫЕ ФАКТОРЫ
 # ============================================================
 n_neighbors = min(5, len(similar))
 nn = NearestNeighbors(n_neighbors=n_neighbors)
 scaler = StandardScaler()
 
 if is_land:
+    # Земля: ВРИ, площадь, год, адрес (город)
     similar['use_code'] = pd.factorize(similar['permitted_use'])[0]
-    feats = ['area', 'build_year', 'use_code']
-    fs = scaler.fit_transform(similar[feats].fillna(0)); fs[:,2] *= 3
+    similar['city_code'] = pd.factorize(similar['address'].fillna(''))[0]
+    feats = ['area', 'build_year', 'use_code', 'city_code']
+    fs = scaler.fit_transform(similar[feats].fillna(0))
     nn.fit(fs)
-    uc = pd.factorize(df['permitted_use'])[0][df['permitted_use'] == permitted_use]; uc = uc[0] if len(uc) > 0 else 0
-    os_ = scaler.transform([[area, build_year, uc]]); os_[:,2] *= 3
+    
+    uc = pd.factorize(df['permitted_use'])[0][df['permitted_use'] == permitted_use]
+    uc = uc[0] if len(uc) > 0 else 0
+    cc = pd.factorize(df['address'].fillna(''))[0][df['address'].fillna('').str.contains(city[:10], na=False)]
+    cc = cc[0] if len(cc) > 0 else 0
+    os_ = scaler.transform([[area, build_year, uc, cc]])
     distances, indices = nn.kneighbors(os_)
+    search_desc = "ВРИ, площадь, год, адрес (равнозначно)"
 else:
+    # Здания: наименование, материал, площадь, год, адрес (город)
     similar['name_code'] = pd.factorize(similar['name'])[0]
     similar['material_code'] = pd.factorize(similar['wall_material'])[0]
-    feats = ['area', 'build_year', 'object_type_code', 'name_code', 'material_code']
-    fs = scaler.fit_transform(similar[feats].fillna(0)); fs[:,3] *= 5; fs[:,4] *= 3
+    similar['city_code'] = pd.factorize(similar['address'].fillna(''))[0]
+    feats = ['area', 'build_year', 'name_code', 'material_code', 'city_code']
+    fs = scaler.fit_transform(similar[feats].fillna(0))
     nn.fit(fs)
+    
     nc = 0
     for code, name in enumerate(pd.factorize(similar['name'])[1]):
         if object_name[:10].lower() in str(name).lower(): nc = code; break
     mc = 0
     for code, mat in enumerate(pd.factorize(similar['wall_material'])[1]):
         if wall_material[:10].lower() in str(mat).lower(): mc = code; break
-    os_ = scaler.transform([[area, build_year, type_code, nc, mc]]); os_[:,3] *= 5; os_[:,4] *= 3
+    cc = 0
+    for code, addr in enumerate(pd.factorize(similar['address'].fillna(''))[1]):
+        if city[:10].lower() in str(addr).lower(): cc = code; break
+    os_ = scaler.transform([[area, build_year, nc, mc, cc]])
     distances, indices = nn.kneighbors(os_)
+    search_desc = "наименование, материал, площадь, год, адрес (равнозначно)"
 
 analogs = similar.iloc[indices[0]]
 
@@ -184,7 +196,7 @@ j += f"""
 ЭТАП 1: ПРЕДВАРИТЕЛЬНЫЙ ОТБОР ({search_level})
 Из базы {len(df)} сделок отобраны: тип={object_type}, площадь={area*0.3:.0f}-{area*3.0:.0f} м²"""
 if city: j += f", город={city}"
-j += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ\n"
+j += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ ({search_desc})\n"
 
 for i, (_, a) in enumerate(analogs.iterrows(), 1):
     yr = int(a.get('build_year',0)) if not pd.isna(a.get('build_year')) else 0
@@ -208,7 +220,7 @@ result = {
                "wall_material":clean_val(wall_material,30),"city":clean_val(city,30),"address":clean_val(address,120)},
     "predicted": {"price_per_sqm":round(price_sqm),"price_total":round(price_total)},
     "calculation": {"ml_prediction":round(price_sqm),"avg_analogs":round(aa),"weighted_avg":round(wap),"deviation_pct":round(dp,1)},
-    "justification": j, "analogs": [], "search_level": search_level
+    "justification": j, "analogs": [], "search_level": search_level, "search_features": search_desc
 }
 
 for i, (_, a) in enumerate(analogs.iterrows()):
