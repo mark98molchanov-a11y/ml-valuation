@@ -18,15 +18,15 @@ on:
           - Помещение
           - Сооружение
       permitted_use:
-        description: 'ВРИ — для ЗУ'
+        description: 'ВРИ — только для земельных участков'
         required: false
         default: ''
       wall_material:
-        description: 'Материал стен — для зданий, помещений, сооружений'
+        description: 'Материал стен — для зданий/помещений/сооружений'
         required: false
         default: ''
       name:
-        description: 'Наименование — для зданий'
+        description: 'Наименование — для зданий/помещений/сооружений'
         required: false
         default: ''
       address:
