@@ -69,31 +69,53 @@ else:
 price_total = price_sqm * area
 
 # ============================================================
-# Подбор аналогов
+# Подбор аналогов с умным поиском
 # ============================================================
 similar = df[df['object_type_code'] == type_code].copy()
 similar = similar[similar['area'].between(area * 0.3, area * 3.0)]
+search_level = "вся база"
 
+# --- Земля: умный поиск ВРИ ---
 if is_land and permitted_use:
     similar = similar[~similar['permitted_use'].apply(is_empty)].copy()
     kw = permitted_use.lower().split()
-    uf = similar[similar['permitted_use'].str.lower().apply(lambda x: any(k in x for k in kw) if pd.notna(x) else False)]
-    similar = uf if len(uf) >= 3 else similar[similar['permitted_use'].str.lower().str.contains(kw[0], na=False)] if kw and len(similar[similar['permitted_use'].str.lower().str.contains(kw[0], na=False)]) >= 3 else similar
+    
+    exact = similar[similar['permitted_use'].apply(lambda x: all(k in str(x).lower() for k in kw) if pd.notna(x) else False)]
+    if len(exact) >= 3:
+        similar = exact; search_level = "точное совпадение ВРИ"
+    else:
+        soft = similar[similar['permitted_use'].str.lower().apply(lambda x: any(k in x for k in kw) if pd.notna(x) else False)]
+        if len(soft) >= 3:
+            similar = soft; search_level = "похожие ВРИ"
 
+# --- Здания: умный поиск по наименованию и материалу ---
 if not is_land:
     if object_name:
         kw = object_name.lower().split()
-        nf = similar[similar['name'].apply(lambda x: sum(1 for k in kw if k in str(x).lower()) >= min(2,len(kw)) if pd.notna(x) else False)]
-        similar = nf if len(nf) >= 3 else similar[similar['name'].astype(str).str.lower().str.contains(kw[0], na=False)] if kw and len(similar[similar['name'].astype(str).str.lower().str.contains(kw[0], na=False)]) >= 3 else similar
-    if wall_material:
+        
+        exact = similar[similar['name'].apply(lambda x: all(k in str(x).lower() for k in kw) if pd.notna(x) else False)]
+        if len(exact) >= 3:
+            similar = exact; search_level = "точное совпадение наименования"
+        else:
+            mid = similar[similar['name'].apply(lambda x: sum(1 for k in kw if k in str(x).lower()) >= 2 if pd.notna(x) else False)]
+            if len(mid) >= 3:
+                similar = mid; search_level = "похожее наименование (≥2 слов)"
+            else:
+                soft = similar[similar['name'].astype(str).str.lower().str.contains(kw[0], na=False)] if kw else similar
+                if len(soft) >= 3 and kw:
+                    similar = soft; search_level = f"ключевое слово «{kw[0]}»"
+    
+    if wall_material and len(similar) >= 5:
         kw = wall_material.lower().split()
         mf = similar[similar['wall_material'].astype(str).str.lower().apply(lambda x: any(k in x for k in kw) if pd.notna(x) else False)]
         if len(mf) >= 3: similar = mf
 
+# Город
 if city and len(similar) >= 5:
     cf = similar[similar['address'].str.contains(city, na=False)]
     if len(cf) >= 3: similar = cf
 
+# Расширяем если пусто
 if len(similar) < 5: similar = df[df['object_type_code'] == type_code].copy()
 if len(similar) < 3: similar = df.copy()
 
@@ -112,14 +134,12 @@ if is_land:
     uc = pd.factorize(df['permitted_use'])[0][df['permitted_use'] == permitted_use]; uc = uc[0] if len(uc) > 0 else 0
     os_ = scaler.transform([[area, build_year, uc]]); os_[:,2] *= 3
     distances, indices = nn.kneighbors(os_)
-    search_desc = "площадь, год, ВРИ (×3)"
 else:
     similar['name_code'] = pd.factorize(similar['name'])[0]
     similar['material_code'] = pd.factorize(similar['wall_material'])[0]
     feats = ['area', 'build_year', 'object_type_code', 'name_code', 'material_code']
     fs = scaler.fit_transform(similar[feats].fillna(0)); fs[:,3] *= 5; fs[:,4] *= 3
     nn.fit(fs)
-    # Ищем коды внутри similar
     nc = 0
     for code, name in enumerate(pd.factorize(similar['name'])[1]):
         if object_name[:10].lower() in str(name).lower(): nc = code; break
@@ -128,7 +148,6 @@ else:
         if wall_material[:10].lower() in str(mat).lower(): mc = code; break
     os_ = scaler.transform([[area, build_year, type_code, nc, mc]]); os_[:,3] *= 5; os_[:,4] *= 3
     distances, indices = nn.kneighbors(os_)
-    search_desc = "площадь, год, тип, наименование (×5), материал (×3)"
 
 analogs = similar.iloc[indices[0]]
 
@@ -162,13 +181,10 @@ if not is_land:
     if wall_material: j += f"\nМатериал стен: {wall_material}"
 j += f"""
 
-ЭТАП 1: ПРЕДВАРИТЕЛЬНЫЙ ОТБОР
+ЭТАП 1: ПРЕДВАРИТЕЛЬНЫЙ ОТБОР ({search_level})
 Из базы {len(df)} сделок отобраны: тип={object_type}, площадь={area*0.3:.0f}-{area*3.0:.0f} м²"""
 if city: j += f", город={city}"
-if is_land and permitted_use: j += f", ВРИ похожие на «{permitted_use}»"
-if not is_land and object_name: j += f", наименование похожее на «{object_name}»"
-if not is_land and wall_material: j += f", материал «{wall_material}»"
-j += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ (по {search_desc})\n"
+j += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ\n"
 
 for i, (_, a) in enumerate(analogs.iterrows(), 1):
     yr = int(a.get('build_year',0)) if not pd.isna(a.get('build_year')) else 0
@@ -192,7 +208,7 @@ result = {
                "wall_material":clean_val(wall_material,30),"city":clean_val(city,30),"address":clean_val(address,120)},
     "predicted": {"price_per_sqm":round(price_sqm),"price_total":round(price_total)},
     "calculation": {"ml_prediction":round(price_sqm),"avg_analogs":round(aa),"weighted_avg":round(wap),"deviation_pct":round(dp,1)},
-    "justification": j, "analogs": [], "search_features": search_desc
+    "justification": j, "analogs": [], "search_level": search_level
 }
 
 for i, (_, a) in enumerate(analogs.iterrows()):
