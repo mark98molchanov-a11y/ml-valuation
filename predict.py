@@ -152,15 +152,36 @@ if len(similar) < 5:
 if len(similar) < 3:
     similar = df.copy()
 
+# ============================================================
+# Поиск 5 ближайших (разные признаки для разных типов)
+# ============================================================
 n_neighbors = min(5, len(similar))
 nn = NearestNeighbors(n_neighbors=n_neighbors)
 
 if is_land:
-    nn.fit(similar[['area', 'build_year']].fillna(0).values)
+    similar['use_code'] = pd.factorize(similar['permitted_use'])[0]
+    feature_cols = ['area', 'build_year', 'use_code']
+    nn.fit(similar[feature_cols].fillna(0).values)
+    
+    use_code = pd.factorize(df['permitted_use'])[0][df['permitted_use'] == permitted_use]
+    use_code = use_code[0] if len(use_code) > 0 else 0
+    distances, indices = nn.kneighbors([[area, build_year, use_code]])
+    search_desc = "площадь, год, ВРИ"
 else:
-    nn.fit(similar[['area', 'build_year', 'object_type_code']].fillna(0).values)
+    similar['name_code'] = pd.factorize(similar['name'])[0]
+    similar['material_code'] = pd.factorize(similar['wall_material'])[0]
+    feature_cols = ['area', 'build_year', 'object_type_code', 'name_code', 'material_code']
+    nn.fit(similar[feature_cols].fillna(0).values)
+    
+    name_code = pd.factorize(df['name'])[0][df['name'].str.contains(object_name[:20], na=False)]
+    name_code = name_code[0] if len(name_code) > 0 else 0
+    
+    material_code = pd.factorize(df['wall_material'])[0][df['wall_material'].str.contains(wall_material[:15], na=False)]
+    material_code = material_code[0] if len(material_code) > 0 else 0
+    
+    distances, indices = nn.kneighbors([[area, build_year, type_code, name_code, material_code]])
+    search_desc = "площадь, год, тип, наименование, материал стен"
 
-distances, indices = nn.kneighbors([[area, build_year] + ([type_code] if not is_land else [])])
 analogs = similar.iloc[indices[0]]
 
 # Корректировки
@@ -215,14 +236,16 @@ if not is_land and object_name:
     justification += f", наименование похожее на «{object_name}»"
 if not is_land and wall_material:
     justification += f", материал «{wall_material}»"
-justification += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ\n"
+justification += f"\nОтобрано: {len(similar)} объектов\n\nЭТАП 2: ФИНАЛЬНЫЙ ОТБОР 5 АНАЛОГОВ (по {search_desc})\n"
 
 for i, (_, a) in enumerate(analogs.iterrows(), 1):
     kad = clean_val(a.get('kadastr', ''), 20)
     name = clean_val(a.get('name', ''), 50)
     mat = clean_val(a.get('wall_material', ''), 15)
     use = clean_val(a.get('permitted_use', ''), 30)
-    justification += f"Аналог {i}: {name} | КН: {kad} | Площадь: {int(a['area'])} м² | Цена: {int(a['price_per_sqm'])} руб/м²"
+    year = int(a.get('build_year', 0)) if not pd.isna(a.get('build_year')) else 0
+    
+    justification += f"Аналог {i}: {name} | КН: {kad} | Площадь: {int(a['area'])} м² | Год: {year} | Цена: {int(a['price_per_sqm'])} руб/м²"
     if mat:
         justification += f" | Материал: {mat}"
     if use:
@@ -261,10 +284,12 @@ result = {
         "deviation_pct": round(diff_pct, 1)
     },
     "justification": justification,
-    "analogs": []
+    "analogs": [],
+    "search_features": search_desc
 }
 
 for i, (_, a) in enumerate(analogs.iterrows()):
+    year = int(a.get('build_year', 0)) if not pd.isna(a.get('build_year')) else 0
     result["analogs"].append({
         "num": i + 1,
         "kadastr": clean_val(a.get('kadastr', ''), 20),
@@ -272,7 +297,7 @@ for i, (_, a) in enumerate(analogs.iterrows()):
         "area": round(float(a['area']), 1),
         "price_per_sqm": round(float(a['price_per_sqm'])),
         "price_total": round(float(a.get('price_total', 0))),
-        "build_year": int(a.get('build_year', 0)) if not pd.isna(a.get('build_year')) else 0,
+        "build_year": year,
         "object_type": clean_val(a.get('object_type', ''), 30),
         "permitted_use": clean_val(a.get('permitted_use', ''), 50),
         "wall_material": clean_val(a.get('wall_material', ''), 30),
